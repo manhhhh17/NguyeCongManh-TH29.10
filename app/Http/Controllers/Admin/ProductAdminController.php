@@ -1,0 +1,14 @@
+<?php
+namespace App\Http\Controllers\Admin;
+use App\Http\Controllers\Controller;use App\Models\Product;use App\Models\Category;use App\Models\Order;use Illuminate\Http\Request;use Illuminate\Support\Str;
+class ProductAdminController extends Controller {
+ public function dashboard(){$productCount=Product::count();$orderCount=Order::count();$revenue=Order::where('status','delivered')->sum('total_amount');$recentOrders=Order::with('user')->latest()->take(8)->get();return view('admin.dashboard',compact('productCount','orderCount','revenue','recentOrders'));}
+ public function index(Request $r){$products=Product::with('category')->when($r->q,fn($q,$v)=>$q->where('name','like',"%$v%"))->latest()->paginate(12)->withQueryString();return view('admin.products.index',compact('products'));}
+ public function create(){$categories=Category::orderBy('name')->get();return view('admin.products.form',['product'=>new Product(),'categories'=>$categories,'variants'=>[]]);}
+ public function store(Request $r){$d=$this->validated($r);$vs=$d['variants'];unset($d['variants']);$d['slug']=$this->slug($d['name']);$p=Product::create($d);foreach($vs as $v)$p->variants()->create($v);return redirect()->route('admin.san-pham.index')->with('success','Đã thêm sản phẩm.');}
+ public function edit(Product $product){$product->load('variants');$categories=Category::orderBy('name')->get();return view('admin.products.form',['product'=>$product,'categories'=>$categories,'variants'=>$product->variants]);}
+ public function update(Request $r,Product $product){$d=$this->validated($r);$vs=$d['variants'];unset($d['variants']);$d['slug']=$this->slug($d['name'],$product->id);$product->update($d);$product->variants()->delete();foreach($vs as $v)$product->variants()->create($v);return redirect()->route('admin.san-pham.index')->with('success','Đã cập nhật sản phẩm.');}
+ public function destroy(Product $product){if($product->orderItems()->exists()){$product->update(['is_active'=>false]);return back()->with('success','Sản phẩm có lịch sử mua nên đã được ẩn.');}$product->variants()->delete();$product->delete();return back()->with('success','Đã xóa sản phẩm.');}
+ private function validated(Request $r):array{$d=$r->validate(['category_id'=>'required|exists:categories,id','name'=>'required|string|max:200','description'=>'nullable|string|max:10000','price'=>'required|numeric|min:0|max:9999999999','image'=>'nullable|url|max:255','is_active'=>'nullable|boolean','variants'=>'required|array|min:1','variants.*.size'=>'required|string|max:10','variants.*.color'=>'required|string|max:50','variants.*.stock'=>'required|integer|min:0|max:100000','variants.*.sku'=>'required|string|max:80']);$d['is_active']=$r->boolean('is_active');return $d;}
+ private function slug(string $name,?int $ignore=null):string{$base=Str::slug($name)?:'san-pham';$slug=$base;$i=1;while(Product::where('slug',$slug)->when($ignore,fn($q)=>$q->where('id','!=',$ignore))->exists())$slug=$base.'-'.(++$i);return $slug;}
+}
